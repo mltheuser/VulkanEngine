@@ -1,6 +1,6 @@
 # VulkanEngine
 
-I have spent some time recently learning Vulkan after I had implemented the graphics pipeline in c++ as a refresher. A few tutorial series later, I now feel capable in using the api on my own. 
+I have spent some time recently learning Vulkan after I had implemented the graphics pipeline in c++ as a refresher. A few tutorial series later, I now feel comfortable in using the api on my own. 
 
 To deepen my understanding, I'm gradually writing a deffered renderer with PBR materials here and documenting my progress.
 
