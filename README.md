@@ -4,6 +4,12 @@ I have spent some time recently learning Vulkan after I had implemented the grap
 
 To deepen my understanding, I'm gradually writing a deffered renderer with PBR materials here and documenting my progress.
 
+## 20.03.23 - Diffuse Only Material And Free Camera
+
+
+https://user-images.githubusercontent.com/25958978/226397054-fa031255-e231-4310-9084-899f5b2401aa.mp4
+
+
 ## 17.03.23 - Clean Up And Support For Multiple Meshes
 
 Lots of other things to take care of at the moment. Nevertheless I found the time to clean up the code and support several meshes. The added abstractions should speed up the future progress.
