@@ -7,7 +7,7 @@ add_library(display_layer display_layer/display_layer.cc)
 target_include_directories(display_layer PUBLIC display_layer vulkan_layer)
 target_link_libraries(display_layer vulkan_layer sdl2)
 
-add_executable(vulkan3d main.cc components/mesh.cc)
+add_executable(vulkan3d main.cc components/mesh.cc components/Texture.cc)
 
 target_include_directories(vulkan3d PUBLIC components)
 

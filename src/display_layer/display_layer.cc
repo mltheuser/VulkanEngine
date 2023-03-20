@@ -69,9 +69,10 @@ void SwapchainLayer::create_swapchain_images() {
       VulkanLayer::get_instance().device.getSwapchainImagesKHR(swapchain);
   swapchain_image_views.reserve(swapchain_images.size());
   for (auto image : swapchain_images) {
+    Image wrapped_image(image);
     swapchain_image_views.push_back(
         VulkanLayer::get_instance().create_image_view(
-            image, get_swapchain_image_format(),
+            wrapped_image, get_swapchain_image_format(),
             vk::ImageAspectFlagBits::eColor));
   }
 }

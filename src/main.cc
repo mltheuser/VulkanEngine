@@ -4,8 +4,8 @@
 #include <glm/gtx/transform.hpp>
 #include <iostream>
 
-#include "components/mesh.h"
-#include "display_layer/display_layer.h"
+#include "components/FreeFlyCamera.h"
+#include "components/Model.h"
 
 struct SyncStructres {
   vk::Fence render_fence;
@@ -20,6 +20,7 @@ struct MeshPushConstants {
 class TMP {
  public:
   Display display = Display({1700, 800});
+  FreeFlyCamera camera = FreeFlyCamera(&display);
 
   vk::Pipeline pipeline;
   vk::PipelineLayout pipeline_layout;
@@ -28,51 +29,38 @@ class TMP {
   Buffer proj_data_buffer;
 
   std::vector<Mesh> meshes;
+  std::vector<Material> materials;
+  std::vector<Model> models;
 
   TMP() {
     create_pipeline();
 
     // tmp area for model loading
+    materials = {
+        Material(Texture::load(
+            "/home/malte/Documents/vscode/Vulkan3D/assets/viking_room.png")),
+        Material(Texture::load("/home/malte/Documents/vscode/Vulkan3D/assets/"
+                               "statue-g27c0aa581_640.jpg"))};
     meshes = {
         Mesh::load("/home/malte/Documents/vscode/Vulkan3D/assets/bunny.obj"),
         Mesh::load(
             "/home/malte/Documents/vscode/Vulkan3D/assets/viking_room.obj")};
 
-    meshes[0].entity_to_world = glm::scale(glm::vec3(8, 8, 8)) * meshes[0].entity_to_world;
-    meshes[0].entity_to_world = glm::translate(glm::vec3(1, 0, -3)) * meshes[0].entity_to_world;
+    meshes[0].entity_to_world =
+        glm::scale(glm::vec3(8, 8, 8)) * meshes[0].entity_to_world;
+    meshes[0].entity_to_world =
+        glm::translate(glm::vec3(1, 0, -3)) * meshes[0].entity_to_world;
 
-    meshes[1].entity_to_world = glm::rotate(glm::radians(-90.f), glm::vec3(1, 0, 0)) * meshes[1].entity_to_world;
-    meshes[1].entity_to_world = glm::rotate(glm::radians(-125.f), glm::vec3(0, 1, 0)) * meshes[1].entity_to_world;
-    meshes[1].entity_to_world = glm::translate(glm::vec3(-1, 0, -3)) * meshes[1].entity_to_world;
-  }
+    meshes[1].entity_to_world =
+        glm::rotate(glm::radians(-90.f), glm::vec3(1, 0, 0)) *
+        meshes[1].entity_to_world;
+    meshes[1].entity_to_world =
+        glm::rotate(glm::radians(-125.f), glm::vec3(0, 1, 0)) *
+        meshes[1].entity_to_world;
+    meshes[1].entity_to_world =
+        glm::translate(glm::vec3(-1, 0, -3)) * meshes[1].entity_to_world;
 
-  void record_layout_transition(vk::CommandBuffer& cmd_buffer, vk::Image image,
-                                vk::ImageLayout old_layout,
-                                vk::ImageLayout new_layout,
-                                vk::PipelineStageFlags src_stage,
-                                vk::PipelineStageFlags dst_stage,
-                                vk::AccessFlags src_access_mask,
-                                vk::AccessFlags dst_access_mask,
-                                vk::ImageAspectFlags aspect_mask) {
-    vk::ImageMemoryBarrier img_mem_barrier;
-    img_mem_barrier.srcAccessMask = src_access_mask;
-    img_mem_barrier.dstAccessMask = dst_access_mask;
-    img_mem_barrier.oldLayout = old_layout;
-    img_mem_barrier.newLayout = new_layout;
-    img_mem_barrier.setImage(image);
-
-    vk::ImageSubresourceRange sub_range;
-    sub_range.aspectMask = aspect_mask;
-    sub_range.baseArrayLayer = 0;
-    sub_range.baseMipLevel = 0;
-    sub_range.layerCount = 1;
-    sub_range.levelCount = 1;
-    img_mem_barrier.subresourceRange = sub_range;
-
-    std::vector<vk::ImageMemoryBarrier> img_mem_barriers{img_mem_barrier};
-    cmd_buffer.pipelineBarrier(src_stage, dst_stage,
-                               vk::DependencyFlagBits::eByRegion, {}, {},
-                               img_mem_barriers);
+    models = {Model(meshes[1], materials[0]), Model(meshes[0], materials[1])};
   }
 
   void create_pipeline() {
@@ -97,7 +85,8 @@ class TMP {
     vk::PipelineLayoutCreateInfo layout_ci;
     layout_ci.pushConstantRangeCount = 0;
     std::vector<vk::DescriptorSetLayout> desc_set_layouts{
-        Mesh::get_descriptor_set_layout()};
+        Mesh::get_descriptor_set_layout(),
+        Material::get_descriptor_set_layout()};
     layout_ci.setSetLayouts(desc_set_layouts);
     pipeline_layout =
         VulkanLayer::get_instance().device.createPipelineLayout(layout_ci);
@@ -212,9 +201,9 @@ class TMP {
     VK_CHECK(aquire_result_value.result);
     uint32_t swapchain_index = aquire_result_value.value;
 
-    record_layout_transition(
+    VulkanLayer::get_instance().record_layout_transition(
         cmd_buffer,
-        display.swapchain.swapchain_image_views[swapchain_index].image,
+        display.swapchain.swapchain_image_views[swapchain_index].image.image,
         vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
         vk::PipelineStageFlagBits::eTopOfPipe,
         vk::PipelineStageFlagBits::eColorAttachmentOutput,
@@ -267,28 +256,25 @@ class TMP {
                      currentTime - startTime)
                      .count();
 
-    auto view =
-        glm::lookAt(glm::vec3(0.0f, 2.0f, 0.0f), glm::vec3(0.0f, 0.0f, -3.0f),
-                    glm::vec3(0.0f, 1.0f, 0.0f));
-    auto proj = glm::perspective(
-        glm::radians(45.0f),
-        swapchain_extend.width / (float)swapchain_extend.height, 0.1f, 10.0f);
-    proj[1][1] *= -1;
+    auto cam_proj_data = camera.get_projection_data();
 
-    for (Mesh& mesh : meshes) {
-      auto old_mat = mesh.entity_to_world;
-      mesh.entity_to_world = old_mat * glm::rotate(glm::radians(time * 45.f), glm::vec3(0, 1, 0));
+    auto& mesh = models[1].mesh;
+    auto old_mat = mesh.entity_to_world;
+    mesh.entity_to_world =
+        old_mat * glm::rotate(glm::radians(time * 45.f), glm::vec3(0, 1, 0));
 
-      mesh.record_draw(cmd_buffer, pipeline_layout, view, proj);
-
-      mesh.entity_to_world = old_mat;
+    for (Model& model : models) {
+      model.record_draw(cmd_buffer, pipeline_layout, cam_proj_data.view,
+                        cam_proj_data.projection);
     }
+
+    mesh.entity_to_world = old_mat;
 
     cmd_buffer.endRendering();
 
-    record_layout_transition(
+    VulkanLayer::get_instance().record_layout_transition(
         cmd_buffer,
-        display.swapchain.swapchain_image_views[swapchain_index].image,
+        display.swapchain.swapchain_image_views[swapchain_index].image.image,
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::ePresentSrcKHR,
         vk::PipelineStageFlagBits::eColorAttachmentOutput,
@@ -344,9 +330,13 @@ class TMP {
     while (!bQuit) {
       // Handle events on queue
       while (SDL_PollEvent(&e) != 0) {
+        camera.sdl_event_handler(e);
         // close the window when user clicks the X button or alt-f4s
-        if (e.type == SDL_QUIT) bQuit = true;
+        if (e.type == SDL_QUIT ||
+            (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE))
+          bQuit = true;
       }
+      camera.sdl_handle_tick();
 
       draw(cmd_buffer, sync_structs, frame_number);
       frame_number += 1;

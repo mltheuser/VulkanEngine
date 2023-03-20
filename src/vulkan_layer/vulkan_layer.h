@@ -10,8 +10,24 @@ class Buffer {
   vk::Buffer buffer;
 
   Buffer(){};
-  Buffer(vk::Buffer buffer, VmaAllocator allocator, VmaAllocation alloc_info)
+  Buffer(vk::Buffer buffer, VmaAllocator& allocator, VmaAllocation& alloc_info)
       : buffer{buffer}, allocator{allocator}, alloc_info{alloc_info} {};
+
+  void map(void*& ptr) { vmaMapMemory(allocator, alloc_info, &ptr); }
+  void unmap() { vmaUnmapMemory(allocator, alloc_info); }
+
+ private:
+  VmaAllocator allocator;
+  VmaAllocation alloc_info;
+};
+
+class Image {
+ public:
+  vk::Image image;
+  Image(){};
+  Image(vk::Image image) : image{image} {};
+  Image(vk::Image image, VmaAllocator& allocator, VmaAllocation& alloc_info)
+      : image{image}, allocator{allocator}, alloc_info{alloc_info} {};
 
   void map(void*& ptr) { vmaMapMemory(allocator, alloc_info, &ptr); }
   void unmap() { vmaUnmapMemory(allocator, alloc_info); }
@@ -23,20 +39,21 @@ class Buffer {
 
 class ImageView {
  public:
-  vk::Image image;
+  Image image;
   vk::ImageView view;
   ImageView(){};
-  ImageView(vk::Image image, vk::ImageView view) : image{image}, view{view} {};
+  ImageView(Image image, vk::ImageView view) : image{image}, view{view} {};
 };
 
 class DescriptorSetInfo {
-  public:
+ public:
   vk::DescriptorSetLayoutCreateInfo info;
   std::vector<vk::DescriptorSetLayoutBinding> bindings;
 
   DescriptorSetInfo() {}
   DescriptorSetInfo(vk::DescriptorSetLayoutCreateInfo info,
-  std::vector<vk::DescriptorSetLayoutBinding> bindings) : info{info}, bindings{bindings} {
+                    std::vector<vk::DescriptorSetLayoutBinding> bindings)
+      : info{info}, bindings{bindings} {
     this->info.setBindings(this->bindings);
   }
 };
@@ -63,6 +80,35 @@ class VulkanLayer {
   uint32_t graphics_queue_family;
   vk::Queue graphics_queue;
   vk::CommandPool graphics_command_pool;
+
+  void record_layout_transition(vk::CommandBuffer& cmd_buffer, vk::Image image,
+                                vk::ImageLayout old_layout,
+                                vk::ImageLayout new_layout,
+                                vk::PipelineStageFlags src_stage,
+                                vk::PipelineStageFlags dst_stage,
+                                vk::AccessFlags src_access_mask,
+                                vk::AccessFlags dst_access_mask,
+                                vk::ImageAspectFlags aspect_mask) {
+    vk::ImageMemoryBarrier img_mem_barrier;
+    img_mem_barrier.srcAccessMask = src_access_mask;
+    img_mem_barrier.dstAccessMask = dst_access_mask;
+    img_mem_barrier.oldLayout = old_layout;
+    img_mem_barrier.newLayout = new_layout;
+    img_mem_barrier.setImage(image);
+
+    vk::ImageSubresourceRange sub_range;
+    sub_range.aspectMask = aspect_mask;
+    sub_range.baseArrayLayer = 0;
+    sub_range.baseMipLevel = 0;
+    sub_range.layerCount = 1;
+    sub_range.levelCount = 1;
+    img_mem_barrier.subresourceRange = sub_range;
+
+    std::vector<vk::ImageMemoryBarrier> img_mem_barriers{img_mem_barrier};
+    cmd_buffer.pipelineBarrier(src_stage, dst_stage,
+                               vk::DependencyFlagBits::eByRegion, {}, {},
+                               img_mem_barriers);
+  }
 
   Buffer create_buffer(vk::DeviceSize size, vk::BufferUsageFlags usage) {
     vk::BufferCreateInfo bci;
@@ -92,9 +138,9 @@ class VulkanLayer {
                                  vk::ImageAspectFlags aspect,
                                  VmaMemoryUsage mem_usage);
 
-  ImageView create_image_view(vk::Image& image, vk::Format format,
+  ImageView create_image_view(Image& image, vk::Format format,
                               vk::ImageAspectFlags aspect) {
-    auto ivi = image_view2d_create_info(image, format, aspect);
+    auto ivi = image_view2d_create_info(image.image, format, aspect);
     return ImageView(image, device.createImageView(ivi));
   };
 
@@ -103,6 +149,23 @@ class VulkanLayer {
                                                    vk::ImageAspectFlags aspect);
 
   vk::CommandBuffer create_command_buffer(vk::CommandPool& cmd_pool);
+
+  vk::Sampler create_sampler() {
+    vk::SamplerCreateInfo ci;
+    ci.anisotropyEnable = false;
+    ci.mipmapMode = vk::SamplerMipmapMode::eLinear;
+    ci.unnormalizedCoordinates = false;
+
+    ci.addressModeU = vk::SamplerAddressMode::eRepeat;
+    ci.addressModeV = vk::SamplerAddressMode::eRepeat;
+    ci.addressModeW = vk::SamplerAddressMode::eRepeat;
+
+    ci.compareEnable = false;
+    ci.magFilter = vk::Filter::eNearest;
+    ci.minFilter = vk::Filter::eNearest;
+
+    return device.createSampler(ci);
+  }
 
   std::vector<char> readFile(const std::string& filename);
 
@@ -122,7 +185,8 @@ class VulkanLayer {
     return device.createSemaphore(sci);
   }
 
-  vk::DescriptorSetLayout create_descriptor_set_layout(const DescriptorSetInfo& layout_info) {
+  vk::DescriptorSetLayout create_descriptor_set_layout(
+      const DescriptorSetInfo& layout_info) {
     return device.createDescriptorSetLayout(layout_info.info);
   }
 
@@ -164,11 +228,9 @@ class VulkanLayer {
 
     auto descriptorSet = device.allocateDescriptorSets(allocInfo)[0];
 
-    return DescriptorSet{
-      .info = layout_info,
-      .layout = descriptor_set_layout,
-      .set = descriptorSet
-    };
+    return DescriptorSet{.info = layout_info,
+                         .layout = descriptor_set_layout,
+                         .set = descriptorSet};
   }
 
  private:

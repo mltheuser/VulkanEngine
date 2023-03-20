@@ -3,6 +3,7 @@
 
 #include "../vulkan_layer/vulkan_layer.h"
 #include "entity.h"
+#include "Texture.h"
 
 struct MeshProjectionData {
   glm::mat4 to_view;
@@ -82,6 +83,7 @@ class Mesh : public Entity {
     writes[0].dstArrayElement = 0;
     writes[0].descriptorCount = 1;
     writes[0].pBufferInfo = &proj_buffer_info;
+
     VulkanLayer::get_instance().device.updateDescriptorSets(writes, {});
   }
 };

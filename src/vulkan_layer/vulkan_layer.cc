@@ -32,19 +32,19 @@ ImageView VulkanLayer::create_2d_image_view(vk::Extent2D extend,
   VmaAllocationCreateInfo alloc_info = {};
   alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-  VkImage image;
+  VkImage vk_image;
   VmaAllocation image_alloc_info;
   VkExtent3D image_extend = {extend.width, extend.height, 1};
   VkImageCreateInfo ici_c = image2d_create_info(format, usage, image_extend);
-  vmaCreateImage(allocator, &ici_c, &alloc_info, &image, &image_alloc_info,
+  vmaCreateImage(allocator, &ici_c, &alloc_info, &vk_image, &image_alloc_info,
                  nullptr);
 
-  auto vk_image = vk::Image(image);
-  auto ivci = image_view2d_create_info(vk_image, format, aspect);
+  auto image = Image(vk::Image(vk_image), allocator, image_alloc_info);
+  auto ivci = image_view2d_create_info(image.image, format, aspect);
 
   auto image_view = device.createImageView(ivci);
 
-  return ImageView(ivci.image, image_view);
+  return ImageView(image, image_view);
 }
 
 vk::ImageViewCreateInfo VulkanLayer::image_view2d_create_info(
